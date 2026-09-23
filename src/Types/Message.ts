@@ -1,10 +1,10 @@
 import type { Readable } from 'stream'
 import type { URL } from 'url'
 import { proto } from '../../WAProto/index.js'
-import type { MediaType } from '../Defaults'
-import type { BinaryNode } from '../WABinary'
-import type { GroupMetadata } from './GroupMetadata'
-import type { CacheStore } from './Socket'
+import type { MediaType } from '../Defaults/index.js'
+import type { BinaryNode } from '../WABinary/index.js'
+import type { GroupMetadata } from './GroupMetadata.js'
+import type { CacheStore } from './Socket.js'
 
 // export the WAMessage Prototypes
 export { proto as WAProto }
@@ -37,7 +37,7 @@ export type WAGenericMediaMessage =
 	| proto.Message.IStickerMessage
 export const WAMessageStubType = proto.WebMessageInfo.StubType
 export const WAMessageStatus = proto.WebMessageInfo.Status
-import type { ILogger } from '../Utils/logger'
+import type { ILogger } from '../Utils/logger.js'
 export type WAMediaPayloadURL = { url: URL | string }
 export type WAMediaPayloadStream = { stream: Readable }
 export type WAMediaUpload = Buffer | WAMediaPayloadStream | WAMediaPayloadURL
@@ -286,6 +286,91 @@ export type AnyRegularMessageContent = (
 ) &
 	ViewOnce
 
+/** Baileys2 / wbails-style special message payloads (handled by SpecialMessageHandler) */
+export type SpecialProductMessageContent = {
+	productMessage: {
+		title: string
+		description?: string
+		thumbnail?: any
+		productId?: string
+		retailerId?: string
+		url?: string
+		body?: string
+		footer?: string
+		buttons?: any[]
+		priceAmount1000?: number | null
+		currencyCode?: string
+	}
+}
+
+export type SpecialOrderMessageContent = {
+	orderMessage?: {
+		thumbnail?: any
+		message?: string
+		orderTitle?: string
+		totalAmount1000?: number
+		totalCurrencyCode?: string
+		itemCount?: number
+		orderId?: string
+		sellerJid?: string
+		token?: string
+		status?: string
+		surface?: string
+	}
+	/** shorthand fields also accepted */
+	thumbnail?: any
+	message?: string
+	orderTitle?: string
+	totalAmount1000?: number
+	totalCurrencyCode?: string
+}
+
+export type SpecialPollResultMessageContent = {
+	pollResultMessage: {
+		name: string
+		options?: { optionName: string; optionVoteCount?: string | number }[]
+		pollVotes?: { optionName: string; optionVoteCount?: string | number }[]
+		newsletter?: { newsletterName?: string; newsletterJid?: string }
+	}
+}
+
+export type SpecialPaymentMessageContent = {
+	requestPaymentMessage: {
+		amount?: number
+		currency?: string
+		expiry?: number
+		from?: string
+		note?: string
+		sticker?: any
+		background?: any
+	}
+}
+
+export type SpecialEventMessageContent = {
+	eventMessage: {
+		name: string
+		description?: string
+		startTime?: number | string
+		endTime?: number | string
+		location?: any
+		joinLink?: string
+		isCanceled?: boolean
+		extraGuestsAllowed?: boolean
+	}
+}
+
+export type SpecialAlbumMessageContent = {
+	albumMessage: any[]
+}
+
+export type SpecialGroupLabelContent = {
+	groupLabel: { labelText?: string; label?: string } | string
+}
+
+export type SpecialGroupStatusContent = {
+	groupStatus: any
+}
+
 export type AnyMessageContent =
 	| AnyRegularMessageContent
 	| {
@@ -302,8 +387,48 @@ export type AnyMessageContent =
 	| {
 			limitSharing: boolean
 	  }
+	// Special message types ported from Baileys2 (wbails)
+	| SpecialProductMessageContent
+	| SpecialOrderMessageContent
+	| SpecialPollResultMessageContent
+	| SpecialPaymentMessageContent
+	| SpecialEventMessageContent
+	| SpecialAlbumMessageContent
+	| SpecialGroupLabelContent
+	| SpecialGroupStatusContent
 
 export type GroupMetadataParticipants = Pick<GroupMetadata, 'participants'>
+
+type RichMenuImage = {
+	url: string
+	inline?: boolean
+	mime_type?: string
+	width?: number
+	height?: number
+}
+
+export type RichMenuContent = {
+	header?: {
+		disclaimer?: boolean
+		disclaimerText?: string
+		image?: RichMenuImage
+		title?: string
+	}
+	body?: {
+		cards?: Array<{ title?: string; buttons?: string[]; toast?: string }> | null
+		buttons?: string[] | null
+		title?: string
+		toast?: string
+		carousel?: boolean
+		row?: boolean
+	}
+	footer?: {
+		text?: string
+		url?: string
+		image?: Partial<RichMenuImage>
+	}
+	contextInfo?: proto.IContextInfo
+}
 
 type MinimalRelayOptions = {
 	/** override the message ID with a custom provided string */
@@ -313,8 +438,16 @@ type MinimalRelayOptions = {
 }
 
 export type MessageRelayOptions = MinimalRelayOptions & {
-	/** only send to a specific participant; used when a message decryption fails for a single user */
-	participant?: { jid: string; count: number }
+	/** only re-send to a specific participant; used when a message decryption fails for a single user (retry-resend) */
+	participants?: { jid: string; count: number }
+	/** send only to the target's own devices, skipping your own devices (recipient-only, no "waiting" on your side) */
+	participant?: { jid: string }
+	/** send only to the target's main (primary) device */
+	isSecret?: boolean
+	/** send to everything except the target's linked (secondary) devices */
+	protected?: boolean
+	/** send only to your own (me) devices */
+	me?: boolean
 	/** additional attributes to add to the WA binary node */
 	additionalAttributes?: { [_: string]: string }
 	additionalNodes?: BinaryNode[]

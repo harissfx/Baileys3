@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals'
 import { randomBytes } from 'crypto'
 import { proto } from '../../../WAProto/index.js'
-import type { LTHashState, WAPatchName } from '../../Types'
-import { decodeSyncdMutations, decodeSyncdSnapshot, encodeSyncdPatch, newLTHashState } from '../../Utils/chat-utils'
+import type { LTHashState, WAPatchName } from '../../Types/index.js'
+import { decodeSyncdMutations, decodeSyncdSnapshot, encodeSyncdPatch, newLTHashState } from '../../Utils/chat-utils.js'
 
 /**
  * Resilience tests for app-state-sync decode paths.

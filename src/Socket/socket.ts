@@ -12,7 +12,7 @@ import {
 	PROCESSABLE_HISTORY_TYPES,
 	TimeMs,
 	UPLOAD_TIMEOUT
-} from '../Defaults'
+} from '../Defaults/index.js'
 import {
 	type LIDMapping,
 	type NewChatMessageCapInfo,
@@ -20,8 +20,8 @@ import {
 	ReachoutTimelockEnforcementType,
 	type ReachoutTimelockState,
 	type SocketConfig
-} from '../Types'
-import { DisconnectReason, XWAPaths } from '../Types'
+} from '../Types/index.js'
+import { DisconnectReason, XWAPaths } from '../Types/index.js'
 import {
 	addTransactionCapability,
 	aesEncryptCTR,
@@ -43,7 +43,7 @@ import {
 	promiseTimeout,
 	signedKeyPair,
 	xmppSignedPreKey
-} from '../Utils'
+} from '../Utils/index.js'
 import {
 	assertNodeErrorFree,
 	type BinaryNode,
@@ -56,10 +56,10 @@ import {
 	jidDecode,
 	jidEncode,
 	S_WHATSAPP_NET
-} from '../WABinary'
+} from '../WABinary/index.js'
 import { BinaryInfo } from '../WAM/BinaryInfo.js'
-import { USyncQuery, USyncUser } from '../WAUSync/'
-import { WebSocketClient } from './Client'
+import { USyncQuery, USyncUser } from '../WAUSync/index.js'
+import { WebSocketClient } from './Client/index.js'
 import { executeWMexQuery } from './mex.js'
 
 /**

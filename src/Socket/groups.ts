@@ -1,8 +1,8 @@
 import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto/index.js'
-import type { GroupMetadata, GroupParticipant, ParticipantAction, SocketConfig, WAMessageKey } from '../Types'
-import { WAMessageAddressingMode, WAMessageStubType } from '../Types'
-import { generateMessageIDV2, unixTimestampSeconds } from '../Utils'
+import type { GroupMetadata, GroupParticipant, ParticipantAction, SocketConfig, WAMessageKey } from '../Types/index.js'
+import { WAMessageAddressingMode, WAMessageStubType } from '../Types/index.js'
+import { generateMessageIDV2, unixTimestampSeconds } from '../Utils/index.js'
 import {
 	type BinaryNode,
 	getBinaryNodeChild,
@@ -12,8 +12,8 @@ import {
 	isPnUser,
 	jidEncode,
 	jidNormalizedUser
-} from '../WABinary'
-import { makeChatsSocket } from './chats'
+} from '../WABinary/index.js'
+import { makeChatsSocket } from './chats.js'
 
 export const makeGroupsSocket = (config: SocketConfig) => {
 	const sock = makeChatsSocket(config)

@@ -1,5 +1,5 @@
 import { proto } from '../../../WAProto/index.js'
-import { makeLtHashGenerator } from '../../Utils/chat-utils'
+import { makeLtHashGenerator } from '../../Utils/chat-utils.js'
 
 const SET = proto.SyncdMutation.SyncdOperation.SET
 const REMOVE = proto.SyncdMutation.SyncdOperation.REMOVE

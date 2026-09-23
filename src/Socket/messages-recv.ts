@@ -9,7 +9,7 @@ import {
 	MIN_PREKEY_COUNT,
 	PLACEHOLDER_MAX_AGE_SECONDS,
 	STATUS_EXPIRY_SECONDS
-} from '../Defaults'
+} from '../Defaults/index.js'
 import type {
 	GroupParticipant,
 	MessageReceiptType,
@@ -21,8 +21,8 @@ import type {
 	WAMessage,
 	WAMessageKey,
 	WAPatchName
-} from '../Types'
-import { ReachoutTimelockEnforcementType, WAMessageStatus, WAMessageStubType } from '../Types'
+} from '../Types/index.js'
+import { ReachoutTimelockEnforcementType, WAMessageStatus, WAMessageStubType } from '../Types/index.js'
 import {
 	ACCOUNT_RESTRICTED_TEXT,
 	aesDecryptCTR,
@@ -52,10 +52,10 @@ import {
 	unixTimestampSeconds,
 	xmppPreKey,
 	xmppSignedPreKey
-} from '../Utils'
-import { makeMutex } from '../Utils/make-mutex'
-import { makeOfflineNodeProcessor, type MessageType } from '../Utils/offline-node-processor'
-import { buildAckStanza } from '../Utils/stanza-ack'
+} from '../Utils/index.js'
+import { makeMutex } from '../Utils/make-mutex.js'
+import { makeOfflineNodeProcessor, type MessageType } from '../Utils/offline-node-processor.js'
+import { buildAckStanza } from '../Utils/stanza-ack.js'
 import {
 	buildMergedTcTokenIndexWrite,
 	isTcTokenExpired,
@@ -64,7 +64,7 @@ import {
 	resolveTcTokenJid,
 	storeTcTokensFromIqResult,
 	TC_TOKEN_INDEX_KEY
-} from '../Utils/tc-token-utils'
+} from '../Utils/tc-token-utils.js'
 import {
 	areJidsSameUser,
 	type BinaryNode,
@@ -84,9 +84,9 @@ import {
 	jidNormalizedUser,
 	type JidWithDevice,
 	S_WHATSAPP_NET
-} from '../WABinary'
-import { extractGroupMetadata } from './groups'
-import { makeMessagesSocket } from './messages-send'
+} from '../WABinary/index.js'
+import { extractGroupMetadata } from './groups.js'
+import { makeMessagesSocket } from './messages-send.js'
 
 type MexGqlData = Record<string, unknown>
 
@@ -1447,7 +1447,7 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 				if (sendToAll) {
 					msgRelayOpts.useUserDevicesCache = false
 				} else {
-					msgRelayOpts.participant = {
+					msgRelayOpts.participants = {
 						jid: participant,
 						count: +retryNode.attrs.count!
 					}

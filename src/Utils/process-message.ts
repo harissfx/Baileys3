@@ -16,9 +16,9 @@ import type {
 	SocketConfig,
 	WAMessage,
 	WAMessageKey
-} from '../Types'
-import { WAMessageStubType } from '../Types'
-import { getContentType, normalizeMessageContent } from '../Utils/messages'
+} from '../Types/index.js'
+import { WAMessageStubType } from '../Types/index.js'
+import { getContentType, normalizeMessageContent } from './messages.js'
 import {
 	areJidsSameUser,
 	isHostedLidUser,
@@ -29,12 +29,12 @@ import {
 	jidDecode,
 	jidEncode,
 	jidNormalizedUser
-} from '../WABinary'
-import { aesDecryptGCM, hmacSign } from './crypto'
-import { getKeyAuthor, toNumber } from './generics'
-import { downloadAndProcessHistorySyncNotification } from './history'
-import type { ILogger } from './logger'
-import { buildMergedTcTokenIndexWrite, resolveTcTokenJid } from './tc-token-utils'
+} from '../WABinary/index.js'
+import { aesDecryptGCM, hmacSign } from './crypto.js'
+import { getKeyAuthor, toNumber } from './generics.js'
+import { downloadAndProcessHistorySyncNotification } from './history.js'
+import type { ILogger } from './logger.js'
+import { buildMergedTcTokenIndexWrite, resolveTcTokenJid } from './tc-token-utils.js'
 
 type ProcessMessageContext = {
 	shouldProcessHistoryMsg: boolean

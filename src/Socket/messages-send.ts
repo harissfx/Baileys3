@@ -1,17 +1,19 @@
 import NodeCache from '@cacheable/node-cache'
 import { Boom } from '@hapi/boom'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { proto } from '../../WAProto/index.js'
-import { DEFAULT_CACHE_TTLS, WA_DEFAULT_EPHEMERAL } from '../Defaults'
+import { DEFAULT_CACHE_TTLS, WA_DEFAULT_EPHEMERAL } from '../Defaults/index.js'
 import type {
 	AnyMessageContent,
 	MediaConnInfo,
 	MessageReceiptType,
 	MessageRelayOptions,
 	MiscMessageGenerationOptions,
+	RichMenuContent,
 	SocketConfig,
 	WAMessage,
 	WAMessageKey
-} from '../Types'
+} from '../Types/index.js'
 import {
 	aggregateMessageKeysNotFromMe,
 	assertMediaContent,
@@ -27,6 +29,8 @@ import {
 	generateMessageIDV2,
 	generateParticipantHashV2,
 	generateWAMessage,
+	generateWAMessageContent,
+	generateWAMessageFromContent,
 	getStatusCodeForMediaRetry,
 	getUrlFromDirectPath,
 	getWAUploadToServer,
@@ -34,10 +38,10 @@ import {
 	normalizeMessageContent,
 	parseAndInjectE2ESessions,
 	unixTimestampSeconds
-} from '../Utils'
-import { getUrlInfo } from '../Utils/link-preview'
-import { makeKeyedMutex, makeMutex } from '../Utils/make-mutex'
-import { getMessageReportingToken, shouldIncludeReportingToken } from '../Utils/reporting-utils'
+} from '../Utils/index.js'
+import { getUrlInfo } from '../Utils/link-preview.js'
+import { makeKeyedMutex, makeMutex } from '../Utils/make-mutex.js'
+import { getMessageReportingToken, shouldIncludeReportingToken } from '../Utils/reporting-utils.js'
 import {
 	buildMergedTcTokenIndexWrite,
 	isTcTokenExpired,
@@ -45,7 +49,7 @@ import {
 	resolveTcTokenJid,
 	shouldSendNewTcToken,
 	storeTcTokensFromIqResult
-} from '../Utils/tc-token-utils'
+} from '../Utils/tc-token-utils.js'
 import {
 	areJidsSameUser,
 	type BinaryNode,
@@ -66,9 +70,10 @@ import {
 	type JidWithDevice,
 	PSA_WID,
 	S_WHATSAPP_NET
-} from '../WABinary'
-import { USyncQuery, USyncUser } from '../WAUSync'
-import { makeNewsletterSocket } from './newsletter'
+} from '../WABinary/index.js'
+import { USyncQuery, USyncUser } from '../WAUSync/index.js'
+import { makeNewsletterSocket } from './newsletter.js'
+import { SpecialMessageHandler } from './special-messages.js'
 
 export const makeMessagesSocket = (config: SocketConfig) => {
 	const {
@@ -619,6 +624,10 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		{
 			messageId: msgId,
 			participant,
+			participants: retryParticipants,
+			isSecret,
+			protected: protectedSend,
+			me: meOnly,
 			additionalAttributes,
 			additionalNodes,
 			useUserDevicesCache,
@@ -628,7 +637,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	) => {
 		const meId = assertMeId(authState.creds)
 		const meLid = authState.creds.me?.lid
-		const isRetryResend = Boolean(participant?.jid)
+		const isRetryResend = Boolean(retryParticipants?.jid && retryParticipants?.count != null)
+		const isRecipientOnly = Boolean(participant?.jid)
 		let shouldIncludeDeviceIdentity = isRetryResend
 		const statusJid = 'status@broadcast'
 
@@ -660,17 +670,21 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 		const extraAttrs: BinaryNodeAttributes = {}
 
-		if (participant) {
+		if (retryParticipants) {
 			if (!isGroup && !isStatus) {
 				additionalAttributes = { ...additionalAttributes, device_fanout: 'false' }
 			}
 
-			const { user, device } = jidDecode(participant.jid)!
+			const { user, device } = jidDecode(retryParticipants.jid)!
 			devices.push({
 				user,
 				device,
-				jid: participant.jid
+				jid: retryParticipants.jid
 			})
+		}
+
+		if ((isRecipientOnly || isSecret || protectedSend || meOnly) && !isGroup && !isStatus) {
+			additionalAttributes = { ...additionalAttributes, device_fanout: 'false' }
 		}
 
 		await authState.keys.transaction(async () => {
@@ -681,7 +695,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 			if (isNewsletter) {
 				const patched = patchMessageBeforeSending ? await patchMessageBeforeSending(message, []) : message
-				const bytes = encodeNewsletterMessage(patched as proto.IMessage)
+				const bytes = encodeNewsletterMessage(patched as unknown as proto.IMessage)
 				binaryNodeContent.push({
 					tag: 'plaintext',
 					attrs: {},
@@ -719,7 +733,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 						return groupData
 					})(),
 					(async () => {
-						if (!participant && !isStatus) {
+						if (!retryParticipants && !isStatus) {
 							// what if sender memory is less accurate than the cached metadata
 							// on participant change in group, we should do sender memory manipulation
 							const result = await authState.keys.get('sender-key-memory', [jid]) // TODO: check out what if the sender key memory doesn't include the LID stuff now?
@@ -774,7 +788,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					const deviceJid = device.jid
 					const hasKey = !!senderKeyMap[deviceJid]
 					if (
-						(!hasKey || !!participant) &&
+						(!hasKey || !!retryParticipants) &&
 						!isHostedLidUser(deviceJid) &&
 						!isHostedPnUser(deviceJid) &&
 						device.device !== 99
@@ -824,7 +838,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				}
 
 				const { user: ownUser } = jidDecode(ownId)!
-				if (!participant) {
+				if (!retryParticipants) {
 					const patchedForReporting = await patchMessageBeforeSending(message, [jid])
 					reportingMessage = Array.isArray(patchedForReporting)
 						? patchedForReporting.find(item => item.recipientJid === jid) || patchedForReporting[0]
@@ -889,6 +903,12 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 					// Check if this is our device (could match either PN or LID user)
 					const isMe = user === mePnUser || user === meLidUser
+					const hasDevice = jid.includes(':')
+
+					if (isRecipientOnly && isMe) continue
+					if (isSecret && !(!isMe && !hasDevice)) continue
+					if (protectedSend && !isMe && hasDevice) continue
+					if (meOnly && !isMe) continue
 
 					if (isMe) {
 						meRecipients.push(jid)
@@ -920,8 +940,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			}
 
 			if (isRetryResend) {
-				const isParticipantLid = isLidUser(participant!.jid)
-				const isMe = areJidsSameUser(participant!.jid, isParticipantLid ? meLid : meId)
+				const isParticipantLid = isLidUser(retryParticipants!.jid)
+				const isMe = areJidsSameUser(retryParticipants!.jid, isParticipantLid ? meLid : meId)
 
 				let messageToSend = message
 				if (isGroupOrStatus) {
@@ -962,7 +982,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 				const { type, ciphertext: encryptedContent } = await signalRepository.encryptMessage({
 					data: encodedMessageToSend,
-					jid: participant!.jid
+					jid: retryParticipants!.jid
 				})
 
 				binaryNodeContent.push({
@@ -970,7 +990,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					attrs: {
 						v: '2',
 						type,
-						count: participant!.count.toString()
+						count: retryParticipants!.count.toString()
 					},
 					content: encryptedContent
 				})
@@ -1006,15 +1026,15 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			// if the participant to send to is explicitly specified (generally retry recp)
 			// ensure the message is only sent to that person
 			// if a retry receipt is sent to everyone -- it'll fail decryption for everyone else who received the msg
-			if (participant) {
+			if (retryParticipants) {
 				if (isJidGroup(destinationJid)) {
 					stanza.attrs.to = destinationJid
-					stanza.attrs.participant = participant.jid
-				} else if (areJidsSameUser(participant.jid, meId)) {
-					stanza.attrs.to = participant.jid
+					stanza.attrs.participant = retryParticipants.jid
+				} else if (areJidsSameUser(retryParticipants.jid, meId)) {
+					stanza.attrs.to = retryParticipants.jid
 					stanza.attrs.recipient = destinationJid
 				} else {
-					stanza.attrs.to = participant.jid
+					stanza.attrs.to = retryParticipants.jid
 				}
 			} else {
 				stanza.attrs.to = destinationJid
@@ -1042,7 +1062,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 						id: msgId,
 						fromMe: true,
 						remoteJid: destinationJid,
-						participant: participant?.jid
+						participant: retryParticipants?.jid
 					}
 					const reportingNode = await getMessageReportingToken(encoded, reportingMessage, reportingKey)
 					if (reportingNode) {
@@ -1090,6 +1110,25 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 			if (additionalNodes && additionalNodes.length > 0) {
 				;(stanza.content as BinaryNode[]).push(...additionalNodes)
+			}
+
+			// Ported from @poucode/baileys: biz + native_flow nodes for interactive/product
+			if (!isNewsletter) {
+				const buttonType = getButtonType(message)
+				if (buttonType) {
+					const alreadyHasBiz = (stanza.content as BinaryNode[])?.some(
+						n => n && typeof n === 'object' && (n as BinaryNode).tag === 'biz'
+					)
+					if (!alreadyHasBiz) {
+						;(stanza.content as BinaryNode[]).push(getButtonArgs(message))
+					}
+					const alreadyHasBizBot = (stanza.content as BinaryNode[])?.some(
+						n => n && typeof n === 'object' && (n as BinaryNode).tag === 'bot'
+					)
+					if (!alreadyHasBizBot && isPnUser(destinationJid)) {
+						;(stanza.content as BinaryNode[]).push({ tag: 'bot', attrs: { biz_bot: '1' } })
+					}
+				}
 			}
 
 			logger.debug({ msgId }, `sending message to ${participants.length} devices`)
@@ -1143,12 +1182,109 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			}
 
 			// Add message to retry cache if enabled
-			if (messageRetryManager && !participant) {
+			if (messageRetryManager && !retryParticipants) {
 				messageRetryManager.addRecentMessage(destinationJid, msgId, message)
 			}
 		}, meId)
 
 		return msgId
+	}
+
+	/** Ported from @poucode/baileys — required so interactive/product native_flow renders on WA */
+	const getButtonType = (message: proto.IMessage) => {
+		const msg = normalizeMessageContent(message) || message
+		if ((msg as any).listMessage) return 'list'
+		if ((msg as any).buttonsMessage) return 'buttons'
+		const nativeFlow = (msg as any).interactiveMessage?.nativeFlowMessage
+		const name = nativeFlow?.buttons?.[0]?.name
+		if (name === 'review_and_pay') return 'review_and_pay'
+		if (name === 'review_order') return 'review_order'
+		if (name === 'payment_info') return 'payment_info'
+		if (name === 'payment_key_info') return 'payment_key_info'
+		if (name === 'payment_status') return 'payment_status'
+		if (name === 'payment_method') return 'payment_method'
+		if (name === 'catalog_message') return 'catalog_message'
+		if ((msg as any).interactiveMessage && nativeFlow) return 'interactive'
+		if (nativeFlow) return 'native_flow'
+		return undefined
+	}
+
+	const getButtonArgs = (message: proto.IMessage): BinaryNode => {
+		const msg = normalizeMessageContent(message) || message
+		const nativeFlow = (msg as any).interactiveMessage?.nativeFlowMessage
+		const firstButtonName = nativeFlow?.buttons?.[0]?.name as string | undefined
+		const nativeFlowSpecials = [
+			'mpm',
+			'cta_catalog',
+			'send_location',
+			'call_permission_request',
+			'wa_payment_transaction_details',
+			'automated_greeting_message_view_catalog'
+		]
+		const ts = unixTimestampSeconds().toString()
+
+		if (nativeFlow && (firstButtonName === 'review_and_pay' || firstButtonName === 'payment_info')) {
+			return {
+				tag: 'biz',
+				attrs: {
+					native_flow_name: firstButtonName === 'review_and_pay' ? 'order_details' : firstButtonName!
+				}
+			}
+		} else if (nativeFlow && firstButtonName && nativeFlowSpecials.includes(firstButtonName)) {
+			return {
+				tag: 'biz',
+				attrs: {
+					actual_actors: '2',
+					host_storage: '2',
+					privacy_mode_ts: ts
+				},
+				content: [
+					{
+						tag: 'interactive',
+						attrs: { type: 'native_flow', v: '1' },
+						content: [{ tag: 'native_flow', attrs: { v: '2', name: firstButtonName } }]
+					},
+					{ tag: 'quality_control', attrs: { source_type: 'third_party' } }
+				]
+			}
+		} else if (nativeFlow || (msg as any).buttonsMessage) {
+			// single_select / cta_url / product menu — works for WA & WA Business
+			return {
+				tag: 'biz',
+				attrs: {
+					actual_actors: '2',
+					host_storage: '2',
+					privacy_mode_ts: ts
+				},
+				content: [
+					{
+						tag: 'interactive',
+						attrs: { type: 'native_flow', v: '1' },
+						content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }]
+					},
+					{ tag: 'quality_control', attrs: { source_type: 'third_party' } }
+				]
+			}
+		} else if ((msg as any).listMessage) {
+			return {
+				tag: 'biz',
+				attrs: {
+					actual_actors: '2',
+					host_storage: '2',
+					privacy_mode_ts: ts
+				},
+				content: [{ tag: 'list', attrs: { v: '2', type: 'product_list' } }]
+			}
+		}
+
+		return {
+			tag: 'biz',
+			attrs: {
+				actual_actors: '2',
+				host_storage: '2',
+				privacy_mode_ts: ts
+			}
+		}
 	}
 
 	const getMessageType = (message: proto.IMessage) => {
@@ -1325,6 +1461,305 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 			return message
 		},
+		/**
+		 * Send an interactive "rich menu" — quick-reply buttons (or a carousel of cards) with an
+		 * optional image header and an open-URL footer. Ported from the `@vansnowi/baileys` fork.
+		 */
+		richMenu: async (target: string, content: RichMenuContent = {}) => {
+			const header = content?.header
+			const body = content?.body
+			const footer = content?.footer
+			let messageContextInfo: proto.IMessage = {}
+			const sections: any[] = []
+
+			const randomToolId = () => randomBytes(8).toString('hex')
+
+			if (header) {
+				const {
+					disclaimer = false,
+					disclaimerText = ' ',
+					image = { inline: false } as NonNullable<RichMenuContent['header']>['image'],
+					title = ''
+				} = header ?? {}
+
+				if (disclaimer) {
+					messageContextInfo = {
+						messageContextInfo: {
+							botMetadata: {
+								messageDisclaimerText: disclaimerText
+							}
+						}
+					}
+				}
+
+				if (title) {
+					sections.push({
+						__typename: 'GenAIUnifiedResponseSection',
+						view_model: {
+							__typename: 'GenAISingleLayoutViewModel',
+							primitive: {
+								__typename: 'FOATextPrimitive',
+								text: '# ' + title
+							}
+						}
+					})
+				}
+
+				if (image?.url) {
+					if (image?.inline) {
+						sections.push({
+							__typename: 'GenAIUnifiedResponseSection',
+							view_model: {
+								__typename: 'GenAISingleLayoutViewModel',
+								primitive: {
+									__typename: 'GenAIMarkdownTextUXPrimitive',
+									text: '{{header}}.{{/header}}',
+									inline_entities: [
+										{
+											__typename: 'GenAITextInlineEntity',
+											key: 'header',
+											metadata: {
+												__typename: 'GenAILatexItem',
+												latex_expression: '.',
+												font_height: 24,
+												padding: 4,
+												latex_image: {
+													__typename: 'GenAIMediaItem',
+													mime_type: image.mime_type || 'image/png',
+													url: image.url,
+													url_fallback: image.url,
+													width: image.width || 500,
+													height: image.height || 500,
+													expiration_timestamp_ms: Date.now() + 86400000
+												}
+											}
+										}
+									]
+								}
+							}
+						})
+					} else {
+						sections.push({
+							__typename: 'GenAIUnifiedResponseSection',
+							view_model: {
+								__typename: 'GenAISingleLayoutViewModel',
+								primitive: {
+									__typename: 'GenAIImagePrimitive',
+									preview_image: {
+										__typename: 'GenAIMediaItem',
+										mime_type: image.mime_type || 'image/png',
+										url: image.url
+									},
+									full_image: {
+										__typename: 'GenAIMediaItem',
+										mime_type: image.mime_type || 'image/png',
+										url: image.url
+									}
+								}
+							}
+						})
+					}
+				}
+			}
+
+			if (body) {
+				const { cards = null, buttons = null, title = '', toast = '', carousel = false, row = false } = body ?? {}
+
+				if (carousel || row) {
+					if (cards && cards.length >= 1) {
+						sections.push({
+							__typename: 'GenAIUnifiedResponseSection',
+							view_model: {
+								primitives: cards.map(card => ({
+									__typename: 'GenAI3PExtWidgetPrimitive',
+									header: {
+										__typename: 'GenAI3PExtWidgetStandardHeader',
+										title: card?.title || ''
+									},
+									body: {
+										__typename: 'GenAI3PExtCalendarEventList',
+										ctas: (card?.buttons || []).map(text => ({
+											label: text,
+											state: 'PENDING',
+											kind: 'OTHER',
+											tool_call_id: randomToolId(),
+											toast: {
+												label: card?.toast || '',
+												__typename: 'GenAI3PExtWidgetToast'
+											},
+											__typename: 'GenAI3PExtWidgetCTA'
+										})),
+										sections: []
+									}
+								})),
+								__typename: carousel ? 'GenAIHScrollLayoutViewModel' : 'GenAIActionRowLayoutViewModel'
+							}
+						})
+					}
+				} else if (buttons?.length) {
+					sections.push({
+						__typename: 'GenAIUnifiedResponseSection',
+						view_model: {
+							primitive: {
+								__typename: 'GenAI3PExtWidgetPrimitive',
+								header: {
+									__typename: 'GenAI3PExtWidgetStandardHeader',
+									title: title || ''
+								},
+								body: {
+									__typename: 'GenAI3PExtCalendarEventList',
+									ctas: buttons.map(text => ({
+										label: text,
+										state: 'PENDING',
+										kind: 'OTHER',
+										tool_call_id: randomToolId(),
+										toast: {
+											label: toast,
+											__typename: 'GenAI3PExtWidgetToast'
+										},
+										__typename: 'GenAI3PExtWidgetCTA'
+									})),
+									sections: []
+								}
+							},
+							__typename: 'GenAISingleLayoutViewModel'
+						}
+					})
+				}
+			}
+
+			if (footer) {
+				const { text = '', url = '', image = {} } = footer ?? {}
+				const img: any[] = []
+
+				if (image?.url) {
+					img.push({
+						__typename: 'GenAIMarkdownTextUXPrimitive',
+						text: '{{header}}.{{/header}}',
+						inline_entities: [
+							{
+								__typename: 'GenAITextInlineEntity',
+								key: 'header',
+								metadata: {
+									__typename: 'GenAILatexItem',
+									latex_expression: '.',
+									font_height: 24,
+									padding: -5,
+									latex_image: {
+										__typename: 'GenAIMediaItem',
+										mime_type: image.mime_type || 'image/png',
+										url: image.url,
+										url_fallback: image.url,
+										width: image.width || 100,
+										height: image.height || 100,
+										expiration_timestamp_ms: Date.now() + 86400000
+									}
+								}
+							}
+						]
+					})
+				}
+
+				// FIX: section footer wajib punya __typename (sama seperti section lain)
+				sections.push({
+					__typename: 'GenAIUnifiedResponseSection',
+					view_model: {
+						primitives: [
+							{
+								cta_text: text || '',
+								cta_type: 'OPEN_URL',
+								cta_url: url || '',
+								__typename: 'GenAIFooterActionPrimitive'
+							},
+							...img
+						],
+						__typename: 'GenAIActionRowLayoutViewModel'
+					}
+				})
+			}
+
+			// FIX: samakan struktur dengan sendHtml — tanpa ini client WA sering crash
+			// saat buka chat (payload GenAI incomplete).
+			const waMsg = generateWAMessageFromContent(
+				target,
+				{
+					...messageContextInfo,
+					botForwardedMessage: {
+						message: {
+							richResponseMessage: {
+								messageType: 1,
+								unifiedResponse: {
+									data: Buffer.from(
+										JSON.stringify({
+											__typename: 'GenAIUnifiedResponse',
+											response_id: randomUUID(),
+											sections
+										})
+									).toString('base64') as any
+								},
+								contextInfo: {
+									isForwarded: true,
+									forwardOrigin: 4,
+									...(content?.contextInfo ?? {})
+								}
+							}
+						}
+					}
+				} as unknown as proto.IMessage,
+				{ userJid: authState.creds.me!.id }
+			)
+
+			await relayMessage(target, waMsg.message!, { messageId: waMsg.key.id! })
+
+			return waMsg
+		},
+		/**
+		 * Send a raw HTML payload, rendered client-side. Ported from the `@vansnowi/baileys` fork.
+		 */
+		sendHtml: async (jid: string, html = '') => {
+			const waMsg = generateWAMessageFromContent(
+				jid,
+				{
+					botForwardedMessage: {
+						message: {
+							richResponseMessage: {
+								messageType: 1,
+								unifiedResponse: {
+									data: Buffer.from(
+										JSON.stringify({
+											__typename: 'GenAIUnifiedResponse',
+											response_id: randomUUID(),
+											sections: [
+												{
+													__typename: 'GenAIUnifiedResponseSection',
+													view_model: {
+														__typename: 'GenAISingleLayoutViewModel',
+														primitive: {
+															__typename: 'FOAHtmlPrimitiveDemoDONOTUSE',
+															trusted_sources: [],
+															payload: String(html).trim()
+														}
+													}
+												}
+											]
+										})
+									).toString('base64') as any
+								},
+								contextInfo: {
+									isForwarded: true,
+									forwardOrigin: 4
+								}
+							}
+						}
+					}
+				} as unknown as proto.IMessage,
+				{ userJid: authState.creds.me!.id }
+			)
+
+			await relayMessage(jid, waMsg.message!, { messageId: waMsg.key.id! })
+
+			return waMsg
+		},
 		sendMessage: async (jid: string, content: AnyMessageContent, options: MiscMessageGenerationOptions = {}) => {
 			const userJid = authState.creds.me!.id
 			if (
@@ -1342,6 +1777,29 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 						: disappearingMessagesInChat
 				await groupToggleEphemeral(jid, value)
 			} else {
+				// Special message types (ported from wbails / Baileys2 luxu helpers)
+				const special = new SpecialMessageHandler(
+					{
+						generateWAMessageContent,
+						generateWAMessageFromContent,
+						generateWAMessage,
+						generateMessageID: () => generateMessageIDV2(sock.user?.id)
+					},
+					waUploadToServer,
+					relayMessage,
+					userJid
+				)
+				const specialResult = await special.process(jid, content, { quoted: options.quoted })
+				if (specialResult) {
+					logger?.debug?.({ jid }, 'special message handled')
+					if (config.emitOwnEvents && specialResult.key) {
+						process.nextTick(async () => {
+							await messageMutex.mutex(() => upsertMessage(specialResult as WAMessage, 'append'))
+						})
+					}
+					return specialResult
+				}
+
 				const fullMsg = await generateWAMessage(jid, content, {
 					logger,
 					userJid,

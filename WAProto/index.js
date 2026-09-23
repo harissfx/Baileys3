@@ -47439,6 +47439,7 @@ export const proto = $root.proto = (() => {
             InteractiveMessage.prototype.collectionMessage = null;
             InteractiveMessage.prototype.nativeFlowMessage = null;
             InteractiveMessage.prototype.carouselMessage = null;
+            InteractiveMessage.prototype.bloksWidget = null;
 
             let $oneOfFields;
 
@@ -47472,6 +47473,11 @@ export const proto = $root.proto = (() => {
                 set: $util.oneOfSetter($oneOfFields)
             });
 
+            Object.defineProperty(InteractiveMessage.prototype, "_bloksWidget", {
+                get: $util.oneOfGetter($oneOfFields = ["bloksWidget"]),
+                set: $util.oneOfSetter($oneOfFields)
+            });
+
             Object.defineProperty(InteractiveMessage.prototype, "interactiveMessage", {
                 get: $util.oneOfGetter($oneOfFields = ["shopStorefrontMessage", "collectionMessage", "nativeFlowMessage", "carouselMessage"]),
                 set: $util.oneOfSetter($oneOfFields)
@@ -47498,6 +47504,8 @@ export const proto = $root.proto = (() => {
                     $root.proto.Message.InteractiveMessage.NativeFlowMessage.encode(m.nativeFlowMessage, w.uint32(50).fork()).ldelim();
                 if (m.carouselMessage != null && Object.hasOwnProperty.call(m, "carouselMessage"))
                     $root.proto.Message.InteractiveMessage.CarouselMessage.encode(m.carouselMessage, w.uint32(58).fork()).ldelim();
+                if (m.bloksWidget != null && Object.hasOwnProperty.call(m, "bloksWidget"))
+                    $root.proto.Message.InteractiveMessage.BloksWidget.encode(m.bloksWidget, w.uint32(66).fork()).ldelim();
                 if (m.contextInfo != null && Object.hasOwnProperty.call(m, "contextInfo"))
                     $root.proto.ContextInfo.encode(m.contextInfo, w.uint32(122).fork()).ldelim();
                 if (m.urlTrackingMap != null && Object.hasOwnProperty.call(m, "urlTrackingMap"))
@@ -47548,6 +47556,10 @@ export const proto = $root.proto = (() => {
                         }
                     case 7: {
                             m.carouselMessage = $root.proto.Message.InteractiveMessage.CarouselMessage.decode(r, r.uint32());
+                            break;
+                        }
+                    case 8: {
+                            m.bloksWidget = $root.proto.Message.InteractiveMessage.BloksWidget.decode(r, r.uint32());
                             break;
                         }
                     default:
@@ -47607,6 +47619,11 @@ export const proto = $root.proto = (() => {
                         throw TypeError(".proto.Message.InteractiveMessage.carouselMessage: object expected");
                     m.carouselMessage = $root.proto.Message.InteractiveMessage.CarouselMessage.fromObject(d.carouselMessage);
                 }
+                if (d.bloksWidget != null) {
+                    if (typeof d.bloksWidget !== "object")
+                        throw TypeError(".proto.Message.InteractiveMessage.bloksWidget: object expected");
+                    m.bloksWidget = $root.proto.Message.InteractiveMessage.BloksWidget.fromObject(d.bloksWidget);
+                }
                 return m;
             };
 
@@ -47649,6 +47666,11 @@ export const proto = $root.proto = (() => {
                     if (o.oneofs)
                         d.interactiveMessage = "carouselMessage";
                 }
+                if (m.bloksWidget != null && m.hasOwnProperty("bloksWidget")) {
+                    d.bloksWidget = $root.proto.Message.InteractiveMessage.BloksWidget.toObject(m.bloksWidget, o);
+                    if (o.oneofs)
+                        d._bloksWidget = "bloksWidget";
+                }
                 if (m.contextInfo != null && m.hasOwnProperty("contextInfo")) {
                     d.contextInfo = $root.proto.ContextInfo.toObject(m.contextInfo, o);
                     if (o.oneofs)
@@ -47672,6 +47694,136 @@ export const proto = $root.proto = (() => {
                 }
                 return typeUrlPrefix + "/proto.Message.InteractiveMessage";
             };
+
+
+            InteractiveMessage.BloksWidget = (function() {
+
+                function BloksWidget(p) {
+                    if (p)
+                        for (var ks = Object.keys(p), i = 0; i < ks.length; ++i)
+                            if (p[ks[i]] != null)
+                                this[ks[i]] = p[ks[i]];
+                }
+
+                BloksWidget.prototype.uuid = null;
+                BloksWidget.prototype.data = null;
+                BloksWidget.prototype.type = null;
+                BloksWidget.prototype.fallback = null;
+
+                let $oneOfFields;
+
+                Object.defineProperty(BloksWidget.prototype, "_uuid", {
+                    get: $util.oneOfGetter($oneOfFields = ["uuid"]),
+                    set: $util.oneOfSetter($oneOfFields)
+                });
+                Object.defineProperty(BloksWidget.prototype, "_data", {
+                    get: $util.oneOfGetter($oneOfFields = ["data"]),
+                    set: $util.oneOfSetter($oneOfFields)
+                });
+                Object.defineProperty(BloksWidget.prototype, "_type", {
+                    get: $util.oneOfGetter($oneOfFields = ["type"]),
+                    set: $util.oneOfSetter($oneOfFields)
+                });
+                Object.defineProperty(BloksWidget.prototype, "_fallback", {
+                    get: $util.oneOfGetter($oneOfFields = ["fallback"]),
+                    set: $util.oneOfSetter($oneOfFields)
+                });
+
+                BloksWidget.create = function create(properties) {
+                    return new BloksWidget(properties);
+                };
+
+                BloksWidget.encode = function encode(m, w) {
+                    if (!w)
+                        w = $Writer.create();
+                    if (m.uuid != null && Object.hasOwnProperty.call(m, "uuid"))
+                        w.uint32(10).string(m.uuid);
+                    if (m.data != null && Object.hasOwnProperty.call(m, "data"))
+                        w.uint32(18).string(m.data);
+                    if (m.type != null && Object.hasOwnProperty.call(m, "type"))
+                        w.uint32(26).string(m.type);
+                    if (m.fallback != null && Object.hasOwnProperty.call(m, "fallback"))
+                        w.uint32(34).string(m.fallback);
+                    return w;
+                };
+
+                BloksWidget.decode = function decode(r, l, e) {
+                    if (!(r instanceof $Reader))
+                        r = $Reader.create(r);
+                    var c = l === undefined ? r.len : r.pos + l, m = new $root.proto.Message.InteractiveMessage.BloksWidget();
+                    while (r.pos < c) {
+                        var t = r.uint32();
+                        if (t === e)
+                            break;
+                        switch (t >>> 3) {
+                        case 1: {
+                                m.uuid = r.string();
+                                break;
+                            }
+                        case 2: {
+                                m.data = r.string();
+                                break;
+                            }
+                        case 3: {
+                                m.type = r.string();
+                                break;
+                            }
+                        case 4: {
+                                m.fallback = r.string();
+                                break;
+                            }
+                        default:
+                            r.skipType(t & 7);
+                            break;
+                        }
+                    }
+                    return m;
+                };
+
+                BloksWidget.fromObject = function fromObject(d) {
+                    if (d instanceof $root.proto.Message.InteractiveMessage.BloksWidget)
+                        return d;
+                    var m = new $root.proto.Message.InteractiveMessage.BloksWidget();
+                    if (d.uuid != null) m.uuid = String(d.uuid);
+                    if (d.data != null) m.data = String(d.data);
+                    if (d.type != null) m.type = String(d.type);
+                    if (d.fallback != null) m.fallback = String(d.fallback);
+                    return m;
+                };
+
+                BloksWidget.toObject = function toObject(m, o) {
+                    if (!o) o = {};
+                    var d = {};
+                    if (m.uuid != null && m.hasOwnProperty("uuid")) {
+                        d.uuid = m.uuid;
+                        if (o.oneofs) d._uuid = "uuid";
+                    }
+                    if (m.data != null && m.hasOwnProperty("data")) {
+                        d.data = m.data;
+                        if (o.oneofs) d._data = "data";
+                    }
+                    if (m.type != null && m.hasOwnProperty("type")) {
+                        d.type = m.type;
+                        if (o.oneofs) d._type = "type";
+                    }
+                    if (m.fallback != null && m.hasOwnProperty("fallback")) {
+                        d.fallback = m.fallback;
+                        if (o.oneofs) d._fallback = "fallback";
+                    }
+                    return d;
+                };
+
+                BloksWidget.prototype.toJSON = function toJSON() {
+                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                };
+
+                BloksWidget.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+                    if (typeUrlPrefix === undefined) typeUrlPrefix = "type.googleapis.com";
+                    return typeUrlPrefix + "/proto.Message.InteractiveMessage.BloksWidget";
+                };
+
+                return BloksWidget;
+            })();
 
             InteractiveMessage.Body = (function() {
 

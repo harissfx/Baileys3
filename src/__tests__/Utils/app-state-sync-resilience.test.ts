@@ -8,7 +8,7 @@ import {
 	isMissingKeyError,
 	MAX_SYNC_ATTEMPTS,
 	newLTHashState
-} from '../../Utils/chat-utils'
+} from '../../Utils/chat-utils.js'
 
 const missingKeyFn = async () => null
 
