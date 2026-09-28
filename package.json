@@ -1,15 +1,16 @@
 {
-  "name": "baileys",
+  "name": "@hanzofc/baileys",
   "type": "module",
   "version": "7.0.0-rc14",
-  "description": "A WebSockets library for interacting with WhatsApp Web",
+  "description": "A customized fork of WhiskeySockets/Baileys with additional fixes and modifications for WhatsApp automation.",
   "keywords": [
     "whatsapp",
     "automation"
   ],
-  "homepage": "https://github.com/WhiskeySockets/Baileys/",
+  "homepage": "https://github.com/harissfx/Baileys3",
   "repository": {
-    "url": "git@github.com:WhiskeySockets/Baileys.git"
+    "url": "git+https://github.com/harissfx/Baileys3.git",
+    "type": "git"
   },
   "license": "MIT",
   "author": "Rajeh Taher",
