@@ -1,7 +1,7 @@
 {
   "name": "@hanzofc/baileys",
   "type": "module",
-  "version": "7.0.0-rc14",
+  "version": "7.0.0",
   "description": "A customized fork of WhiskeySockets/Baileys with additional fixes and modifications for WhatsApp automation.",
   "keywords": [
     "whatsapp",
