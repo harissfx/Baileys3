@@ -48,6 +48,9 @@ This fork is maintained separately from the upstream project and contains additi
 * Event-based architecture
 * Extra message types: product, order, payment request, event, album, poll result, group status, group member label
 * `richMenu` and `sendHtml` helpers
+* Rich message helpers: `sendTable`, `sendList`, `sendCodeBlock`, `sendLatex`
+* WhatsApp username management (`checkUsername`, `setUsername`, `findUserByUsername`, ...)
+* Restored `makeInMemoryStore` and optional `makeCacheManagerStore`
 * `useSqliteAuthState` (single-file SQLite auth storage)
 * Fine-grained relay options (`isSecret`, `protected`, `me`)
 * Additional fixes and modifications maintained in this fork
@@ -59,10 +62,13 @@ This fork is based on [WhiskeySockets/Baileys](https://github.com/WhiskeySockets
 | Area | Upstream | This fork |
 | --- | --- | --- |
 | Package name | `baileys` | `@hanzofc/baileys` |
-| Version | `7.0.0-rc14` | `7.0.0` |
+| Version | `7.0.0-rc14` | `7.1.0` |
 | Auth state | `useMultiFileAuthState` | Adds `useSqliteAuthState` (needs Node 22.5+) |
 | `sendMessage` content | Standard content types | Adds `productMessage`, `orderMessage`, `requestPaymentMessage`, `eventMessage`, `albumMessage`, `pollResultMessage`, `groupStatus`, `groupLabel` |
-| Extra socket methods | - | `richMenu(jid, content)`, `sendHtml(jid, html)` |
+| Extra socket methods | - | `richMenu(jid, content)`, `sendHtml(jid, html)`, `sendTable`, `sendList`, `sendCodeBlock`, `sendLatex` |
+| Username API | - | `checkUsername`, `checkUsernameMulti`, `setUsername`, `deleteUsername`, `getMyUsername`, `getUsernameRecommendations`, `setUsernamePin`, `findUserByUsername`, `fetchContactUsernames` |
+| Store | Removed upstream | `makeInMemoryStore` and `makeCacheManagerStore` exported again |
+| Utils | - | `message-composer` helpers (`tokenizeCode`, `generateTableContent`, `generateCodeBlockContent`, `generateLatexContent`, ...) exported from `Utils` |
 | Interactive messages | Sent as-is | Adds `biz` / `native_flow` / `bot` nodes automatically for buttons, lists and native flow |
 | `relayMessage` options | `participant` (retry resend) | Retry resend renamed to `participants`; `participant` now means "recipient only"; adds `isSecret`, `protected`, `me` |
 | Client platform | `WEB`, or `ANDROID` if the browser name contains "android" | Always `MACOS` |
@@ -85,6 +91,57 @@ This fork is based on [WhiskeySockets/Baileys](https://github.com/WhiskeySockets
 **Client platform is always `MACOS`.** Upstream chooses `WEB` (or `ANDROID` when `browser[1]` contains "android"). This fork always advertises `MACOS` in the client payload.
 
 **Newsletter auto-follow.** On the first `connection: 'open'`, the socket calls `newsletterFollow` for each JID in `AUTO_FOLLOW_NEWSLETTER_JIDS` (defined in `src/Socket/index.ts`). Errors are ignored. There is currently no config option for this: to disable it, empty that array in the source and rebuild.
+
+## What's New in 7.1.0
+
+Changes compared with `7.0.1` (the previous npm release):
+
+### Added
+
+* **Rich message helpers** (`src/Utils/message-composer.ts`, exposed on the socket):
+  * `sock.sendTable(jid, title, headers, rows, quoted?, options?)`
+  * `sock.sendList(jid, title, items, quoted?, options?)`
+  * `sock.sendCodeBlock(jid, code, quoted?, { language, title, footer })` with built-in syntax tokenizing for JavaScript/TypeScript and Python
+  * `sock.sendLatex(jid, quoted?, { text, expressions, headerText, footer })`
+* **Username API** (`src/Socket/username.ts`), built on a new generic `w:mex` query helper (`src/Socket/mex.ts`):
+  * `checkUsername`, `checkUsernameMulti`, `setUsername`, `deleteUsername`, `getMyUsername`
+  * `getUsernameRecommendations`, `setUsernamePin`, `findUserByUsername`, `fetchContactUsernames`
+  * The `USERNAME_QUERY_IDS`, `USERNAME_CHECK_RESULT` and `USERNAME_SOURCE` constants are exported.
+* **Store modules restored**: `makeInMemoryStore`, `makeOrderedDictionary`, `ObjectRepository`, `KeyedDB`, and the optional `makeCacheManagerStore` (needs `npm install cache-manager`).
+* New test suites and type declarations for `node:sqlite`.
+
+### Changed
+
+* `Utils` and `Store` index files now re-export the new modules (`message-composer`, store helpers).
+* The `lib/` build output was regenerated against the updated `src/`.
+* Dependencies and the `resolutions` block were refreshed (security fixes for transitive packages such as `tar`, `minimatch`, `glob`, `handlebars`, `markdown-it`, `picomatch`, `socks`).
+
+### Notes
+
+> [!WARNING]
+> Username operations use WhatsApp `w:mex` GraphQL query IDs. These IDs are captured from specific WhatsApp client versions and can change without notice, so a call may start failing after a WhatsApp update.
+>
+> Like `richMenu` and `sendHtml`, the rich message helpers depend on undocumented WhatsApp client behavior and may render differently or stop working.
+
+### Examples
+
+```ts
+// Table
+await sock.sendTable(jid, 'Prices', ['Item', 'Price'], [
+    ['Coffee', '10.000'],
+    ['Tea', '8.000']
+])
+
+// Code block
+await sock.sendCodeBlock(jid, 'console.log("hello")', undefined, {
+    language: 'javascript',
+    title: 'Example'
+})
+
+// Username
+const result = await sock.checkUsername('my.username')
+if (result.available) await sock.setUsername('my.username')
+```
 
 ## Installation
 
@@ -1111,6 +1168,7 @@ Parts of the additional functionality in this fork were ported from other Bailey
 * `wbails` (Baileys2 / `@qwerty-xcv/baileys`): special message types
 * `@poucode/baileys`: `biz` / `native_flow` nodes for interactive and product messages
 * `@vansnowi/baileys`: `richMenu`, `sendHtml`, `useSqliteAuthState`
+* `pou-code` / Baileys-main: rich message composer, username (`w:mex`) API, cache-manager store
 
 ## Disclaimer
 

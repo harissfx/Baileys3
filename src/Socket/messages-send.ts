@@ -72,7 +72,7 @@ import {
 	S_WHATSAPP_NET
 } from '../WABinary/index.js'
 import { USyncQuery, USyncUser } from '../WAUSync/index.js'
-import { makeNewsletterSocket } from './newsletter.js'
+import { makeUsernameSocket } from './username.js'
 import { SpecialMessageHandler } from './special-messages.js'
 
 export const makeMessagesSocket = (config: SocketConfig) => {
@@ -86,7 +86,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		enableRecentMessageCache,
 		maxMsgRetryCount
 	} = config
-	const sock = makeNewsletterSocket(config)
+	const sock = makeUsernameSocket(config)
 	const {
 		ev,
 		authState,
@@ -628,6 +628,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			isSecret,
 			protected: protectedSend,
 			me: meOnly,
+			noSelfSync = false,
 			additionalAttributes,
 			additionalNodes,
 			useUserDevicesCache,
@@ -909,6 +910,13 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					if (isSecret && !(!isMe && !hasDevice)) continue
 					if (protectedSend && !isMe && hasDevice) continue
 					if (meOnly && !isMe) continue
+
+					// noSelfSync: skip syncing to sender's other devices in private chats
+					// (ported from pou-code / Baileys-main)
+					if (noSelfSync && !isGroup && !isStatus && isMe) {
+						logger.debug({ jid }, 'noSelfSync: skipping self device')
+						continue
+					}
 
 					if (isMe) {
 						meRecipients.push(jid)
@@ -1862,7 +1870,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					useCachedGroupMetadata: options.useCachedGroupMetadata,
 					additionalAttributes,
 					statusJidList: options.statusJidList,
-					additionalNodes
+					additionalNodes,
+					noSelfSync: options.noSelfSync
 				})
 				if (config.emitOwnEvents) {
 					process.nextTick(async () => {
@@ -1872,6 +1881,50 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 				return fullMsg
 			}
+		},
+
+		// Rich message helpers (ported from pou-code message-composer)
+		sendTable: async (
+			jid: string,
+			title: string,
+			headers: string[],
+			rows: string[][],
+			quoted?: any,
+			options: MiscMessageGenerationOptions = {}
+		) => {
+			const { generateTableContent } = await import('../Utils/message-composer.js')
+			const { message, messageId } = generateTableContent(title, headers, rows, quoted, options)
+			await relayMessage(jid, message, { messageId, noSelfSync: options.noSelfSync })
+			return { message, messageId }
+		},
+		sendList: async (
+			jid: string,
+			title: string,
+			items: string[],
+			quoted?: any,
+			options: MiscMessageGenerationOptions = {}
+		) => {
+			const { generateListContent } = await import('../Utils/message-composer.js')
+			const { message, messageId } = generateListContent(title, items, quoted, options)
+			await relayMessage(jid, message, { messageId, noSelfSync: options.noSelfSync })
+			return { message, messageId }
+		},
+		sendCodeBlock: async (
+			jid: string,
+			code: string,
+			quoted?: any,
+			options: MiscMessageGenerationOptions & { language?: string; title?: string; footer?: string } = {}
+		) => {
+			const { generateCodeBlockContent } = await import('../Utils/message-composer.js')
+			const { message, messageId } = generateCodeBlockContent(code, quoted, options)
+			await relayMessage(jid, message, { messageId, noSelfSync: options.noSelfSync })
+			return { message, messageId }
+		},
+		sendLatex: async (jid: string, quoted?: any, options: any = {}) => {
+			const { generateLatexContent } = await import('../Utils/message-composer.js')
+			const { message, messageId } = generateLatexContent(quoted, options)
+			await relayMessage(jid, message, { messageId, noSelfSync: options.noSelfSync })
+			return { message, messageId }
 		}
 	}
 }

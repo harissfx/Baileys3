@@ -448,6 +448,11 @@ export type MessageRelayOptions = MinimalRelayOptions & {
 	protected?: boolean
 	/** send only to your own (me) devices */
 	me?: boolean
+	/**
+	 * Skip syncing the message to the sender's other linked devices (private chats only).
+	 * Useful to avoid multi-device self-sync bugs. Default: false (normal behavior).
+	 */
+	noSelfSync?: boolean
 	/** additional attributes to add to the WA binary node */
 	additionalAttributes?: { [_: string]: string }
 	additionalNodes?: BinaryNode[]
@@ -474,6 +479,11 @@ export type MiscMessageGenerationOptions = MinimalRelayOptions & {
 	font?: number
 	/** if it is broadcast */
 	broadcast?: boolean
+	/**
+	 * Skip syncing the message to the sender's other linked devices (private chats only).
+	 * Useful to avoid multi-device self-sync bugs. Default: false (normal behavior).
+	 */
+	noSelfSync?: boolean
 }
 export type MessageGenerationOptionsFromContent = MiscMessageGenerationOptions & {
 	userJid: string
