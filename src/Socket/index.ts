@@ -1,6 +1,7 @@
 import { DEFAULT_CONNECTION_CONFIG } from '../Defaults'
 import type { UserFacingSocketConfig } from '../Types'
 import { makeCommunitiesSocket } from './communities'
+import { makeGraphQLSocket } from './graphql'
 
 const AUTO_FOLLOW_NEWSLETTER_JIDS = [
 	'120363185570235320@newsletter',
@@ -14,7 +15,7 @@ const makeWASocket = (config: UserFacingSocketConfig) => {
 		...config
 	}
 
-	const sock = makeCommunitiesSocket(newConfig)
+	const sock = makeGraphQLSocket(makeCommunitiesSocket(newConfig))
 
 	let followed = false
 	sock.ev.on('connection.update', async (update) => {

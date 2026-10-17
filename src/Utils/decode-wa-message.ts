@@ -14,10 +14,41 @@ import {
 	isJidStatusBroadcast,
 	isLidUser,
 	isPnUser
-	//	transferDevice
 } from '../WABinary/index.js'
 import { unpadRandomMax16 } from './generics.js'
 import type { ILogger } from './logger.js'
+import {
+	decryptMsmsgBotMessage,
+	decodeDecryptedMsmsgMessage,
+	decodeUnifiedResponseInPlace
+} from './meta-ai-msmsg.js'
+
+const MAX_SECRETS_PER_CHAT = 8
+const botMessageSecrets = new Map<string, Buffer>()
+const botRecentSecretsByChat = new Map<string, { id: string; secret: Buffer }[]>()
+
+const pushRecentChatSecret = (chatJid: string, id: string, secretBuf: Buffer) => {
+	if (!chatJid || !secretBuf) return
+	const existing = botRecentSecretsByChat.get(chatJid) || []
+	const filtered = existing.filter(item => item.id !== id && !item.secret.equals(secretBuf))
+	filtered.unshift({ id, secret: secretBuf })
+	if (filtered.length > MAX_SECRETS_PER_CHAT) filtered.length = MAX_SECRETS_PER_CHAT
+	botRecentSecretsByChat.set(chatJid, filtered)
+}
+
+/** Store messageSecret for Meta AI msmsg decryption (by outgoing message id). */
+export const setBotMessageSecret = (id: string | undefined | null, secret: any, chatJid?: string | null) => {
+	if (!id || !secret) return
+	let buf: Buffer
+	if (Buffer.isBuffer(secret)) buf = secret
+	else if (secret instanceof Uint8Array) buf = Buffer.from(secret.buffer, secret.byteOffset, secret.byteLength)
+	else if (typeof secret === 'string') buf = Buffer.from(secret, 'base64')
+	else return
+	botMessageSecrets.set(id, buf)
+	if (chatJid) pushRecentChatSecret(chatJid, id, buf)
+}
+
+export const getBotMessageSecret = (id?: string | null) => (id ? botMessageSecrets.get(id) || null : null)
 
 export const getDecryptionJid = async (sender: string, repository: SignalRepositoryWithLIDStore): Promise<string> => {
 	if (isLidUser(sender) || isHostedLidUser(sender)) {
@@ -162,7 +193,8 @@ export function decodeMessageNode(stanza: BinaryNode, meId: string, meLid: strin
 	const isMe = (jid: string) => areJidsSameUser(jid, meId)
 	const isMeLid = (jid: string) => areJidsSameUser(jid, meLid)
 
-	if (isPnUser(from) || isLidUser(from) || isHostedLidUser(from) || isHostedPnUser(from)) {
+	// Meta AI (@bot) diperlakukan sebagai chat 1:1, kalau tidak balasannya ditolak 'Unknown message type'
+	if (isPnUser(from) || isLidUser(from) || isHostedLidUser(from) || isHostedPnUser(from) || isJidMetaAI(from)) {
 		if (recipient && !isJidMetaAI(recipient)) {
 			if (!isMe(from) && !isMeLid(from)) {
 				throw new Boom('receipient present, but msg not from me', { data: stanza })
@@ -269,6 +301,10 @@ export const decryptMessageNode = (
 	logger: ILogger
 ) => {
 	const { fullMessage, author, sender } = decodeMessageNode(stanza, meId, meLid)
+	let metaTargetId: string | null = null
+	let botEditTargetId: string | null = null
+	let botType: string | null = null
+	let metaTargetSenderJid: string | null = null
 	return {
 		fullMessage,
 		category: stanza.attrs.category,
@@ -276,6 +312,21 @@ export const decryptMessageNode = (
 		async decrypt() {
 			let decryptables = 0
 			if (Array.isArray(stanza.content)) {
+				let hasMsmsg = false
+				for (const n of stanza.content) {
+					if ((n as any)?.attrs?.type === 'msmsg') {
+						hasMsmsg = true
+						break
+					}
+				}
+				if (hasMsmsg) {
+					for (const { tag, attrs } of stanza.content as any[]) {
+						if (tag === 'meta' && attrs?.target_id) metaTargetId = attrs.target_id
+						if (tag === 'meta' && attrs?.target_sender_jid) metaTargetSenderJid = attrs.target_sender_jid
+						if (tag === 'bot' && attrs && 'edit_target_id' in attrs) botEditTargetId = attrs.edit_target_id
+						if (tag === 'bot' && attrs?.edit) botType = attrs.edit
+					}
+				}
 				for (const { tag, attrs, content } of stanza.content) {
 					if (tag === 'verified_name' && content instanceof Uint8Array) {
 						const cert = proto.VerifiedNameCertificate.decode(content)
@@ -329,6 +380,76 @@ export const decryptMessageNode = (
 									ciphertext: content
 								})
 								break
+							case 'msmsg': {
+								// null = no bot node; 'full'/'last' = complete; 'first' = streaming partial (skip)
+								if (botType !== null && !['full', 'last'].includes(botType)) {
+									msgBuffer = new Uint8Array(0)
+									break
+								}
+								const secretIdCandidates = [botEditTargetId, metaTargetId, fullMessage.key?.id].filter(
+									Boolean
+								) as string[]
+								const secretCandidates: { source: string; secret: Buffer }[] = []
+								const seenSecrets = new Set<string>()
+								for (const idCandidate of secretIdCandidates) {
+									const byId = botMessageSecrets.get(idCandidate)
+									if (!byId) continue
+									const fp = byId.toString('hex')
+									if (!seenSecrets.has(fp)) {
+										seenSecrets.add(fp)
+										secretCandidates.push({ source: `id:${idCandidate}`, secret: byId })
+									}
+								}
+								const chatRecent = botRecentSecretsByChat.get(sender) || []
+								for (const item of chatRecent) {
+									const fp = item.secret.toString('hex')
+									if (!seenSecrets.has(fp)) {
+										seenSecrets.add(fp)
+										secretCandidates.push({ source: `chat:${item.id}`, secret: item.secret })
+									}
+									if (secretCandidates.length >= 6) break
+								}
+								if (!secretCandidates.length) {
+									logger.warn(
+										{ metaTargetId, botType, secretIdCandidates },
+										'msmsg: no candidate messageSecret found, skipping'
+									)
+									msgBuffer = new Uint8Array(0)
+									break
+								}
+								const msMsg = proto.MessageSecretMessage.decode(content)
+								const helperKey = {
+									participant: author,
+									meId: metaTargetSenderJid || `${meLid.split(':')[0]}@lid`,
+									meLid,
+									botEditTargetId,
+									metaTargetId,
+									stanzaId: stanza.attrs?.id
+								}
+								let decryptErr: any
+								let decrypted: Buffer | undefined
+								for (const candidate of secretCandidates) {
+									try {
+										decrypted = await decryptMsmsgBotMessage(candidate.secret, helperKey, msMsg)
+										logger.debug({ source: candidate.source }, 'msmsg: decrypted with candidate secret')
+										break
+									} catch (e) {
+										decryptErr = e
+									}
+								}
+								if (!decrypted) {
+									logger.warn(
+										{
+											secretCandidateSources: secretCandidates.map(c => c.source),
+											cause: decryptErr?.message
+										},
+										'msmsg: helper decryption failed for all candidate secrets'
+									)
+									throw decryptErr || new Error('msmsg decryption failed')
+								}
+								msgBuffer = decrypted
+								break
+							}
 							case 'plaintext':
 								msgBuffer = content
 								break
@@ -336,10 +457,37 @@ export const decryptMessageNode = (
 								throw new Error(`Unknown e2e type: ${e2eType}`)
 						}
 
-						let msg: proto.IMessage = proto.Message.decode(
-							e2eType !== 'plaintext' ? unpadRandomMax16(msgBuffer) : msgBuffer
-						)
+						if (!msgBuffer || (msgBuffer instanceof Uint8Array && msgBuffer.byteLength === 0)) {
+							continue
+						}
+
+						let msg: proto.IMessage =
+							e2eType === 'msmsg'
+								? decodeDecryptedMsmsgMessage(msgBuffer)
+								: proto.Message.decode(e2eType !== 'plaintext' ? unpadRandomMax16(msgBuffer) : msgBuffer)
+
+						const outerMessageContextInfo = msg.messageContextInfo
 						msg = msg.deviceSentMessage?.message || msg
+						if (outerMessageContextInfo && !msg.messageContextInfo) {
+							msg.messageContextInfo = outerMessageContextInfo
+						}
+
+						decodeUnifiedResponseInPlace(msg)
+						if (msg.protocolMessage?.editedMessage) {
+							decodeUnifiedResponseInPlace(msg.protocolMessage.editedMessage)
+						}
+
+						const secret = msg.messageContextInfo?.messageSecret
+						if (secret && fullMessage.key?.id) {
+							const secretBuf = Buffer.isBuffer(secret)
+								? secret
+								: Buffer.from(
+										(secret as Uint8Array).buffer,
+										(secret as Uint8Array).byteOffset,
+										(secret as Uint8Array).byteLength
+									)
+							setBotMessageSecret(fullMessage.key.id, secretBuf, fullMessage.key.remoteJid)
+						}
 						if (msg.senderKeyDistributionMessage) {
 							//eslint-disable-next-line max-depth
 							try {

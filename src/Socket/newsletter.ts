@@ -3,7 +3,7 @@ import type { NewsletterMetadata, NewsletterUpdate } from '../Types'
 import { QueryIds, XWAPaths } from '../Types'
 import { generateProfilePicture } from '../Utils/messages-media'
 import { getBinaryNodeChild } from '../WABinary'
-import { makeGroupsSocket } from './groups'
+import { makeAIGroupsSocket } from './aigroups'
 import { executeWMexQuery as genericExecuteWMexQuery } from './mex'
 
 const parseNewsletterCreateResponse = (response: NewsletterCreateResponse): NewsletterMetadata => {
@@ -42,7 +42,7 @@ const parseNewsletterMetadata = (result: unknown): NewsletterMetadata | null => 
 }
 
 export const makeNewsletterSocket = (config: SocketConfig) => {
-	const sock = makeGroupsSocket(config)
+	const sock = makeAIGroupsSocket(config)
 	const { query, generateMessageTag } = sock
 
 	const executeWMexQuery = <T>(variables: Record<string, unknown>, queryId: string, dataPath: string): Promise<T> => {

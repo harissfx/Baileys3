@@ -1584,12 +1584,8 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 
 	const handleMessage = async (node: BinaryNode) => {
 		const encNode = getBinaryNodeChild(node, 'enc')
-		// TODO: temporary fix for crashes and issues resulting of failed msmsg decryption
-		if (encNode?.attrs.type === 'msmsg') {
-			logger.debug({ key: node.attrs.key }, 'ignored msmsg')
-			await sendMessageAck(node, NACK_REASONS.MissingMessageSecret)
-			return
-		}
+		// msmsg (Meta AI) sekarang didekripsi di decode-wa-message.ts, jadi tidak lagi dibuang di sini.
+		const isMsmsg = encNode?.attrs.type === 'msmsg'
 
 		let acked = false
 
@@ -1625,6 +1621,13 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 				}
 
 				// message failed to decrypt
+				// Gagal/lewati dekripsi msmsg (mis. chunk streaming): cukup ack, jangan minta retry/placeholder
+				if (isMsmsg && msg.messageStubType === proto.WebMessageInfo.StubType.CIPHERTEXT) {
+					logger.debug({ key: node.attrs.key }, 'msmsg not decrypted, acking without retry')
+					acked = true
+					return sendMessageAck(node)
+				}
+
 				if (msg.messageStubType === proto.WebMessageInfo.StubType.CIPHERTEXT && msg.category !== 'peer') {
 					if (msg?.messageStubParameters?.[0] === MISSING_KEYS_ERROR_TEXT) {
 						acked = true

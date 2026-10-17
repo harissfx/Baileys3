@@ -628,6 +628,139 @@ export const generateWAMessageContent = async (
 		m = await prepareWAMessageMedia(message as any, options)
 	}
 
+	// === Compatibility layer ported from Baileys Rise / older forks ===
+	// Allows high-level { document/image/..., buttons, footer, caption } and
+	// { sections } / { interactiveButtons } payloads to work like in Rise.
+	if (hasOptionalProperty(message, 'sections') && Array.isArray((message as any).sections) && (message as any).sections.length) {
+		const listMessage: any = {
+			title: (message as any).title || '',
+			buttonText: (message as any).buttonText || 'Menu',
+			footerText: (message as any).footer || '',
+			description: (message as any).text || (message as any).caption || '',
+			sections: (message as any).sections,
+			listType: WAProto.Message.ListMessage.ListType.SINGLE_SELECT
+		}
+		listMessage.contextInfo = {
+			...((message as any).contextInfo || {}),
+			...((message as any).mentions?.length ? { mentionedJid: (message as any).mentions } : {})
+		}
+		m = { listMessage }
+		m.messageContextInfo = m.messageContextInfo || {}
+		if (!m.messageContextInfo.messageSecret) {
+			m.messageContextInfo.messageSecret = randomBytes(32)
+		}
+	} else if (hasOptionalProperty(message, 'buttons') && Array.isArray((message as any).buttons) && (message as any).buttons.length) {
+		const buttonsMessage: any = {
+			buttons: (message as any).buttons.map((b: any) => ({
+				...b,
+				type: b.type != null ? b.type : WAProto.Message.ButtonsMessage.Button.Type.RESPONSE
+			}))
+		}
+		if (hasNonNullishProperty(message, 'text')) {
+			buttonsMessage.contentText = (message as any).text
+			buttonsMessage.headerType = WAProto.Message.ButtonsMessage.HeaderType.EMPTY
+		} else {
+			if (hasOptionalProperty(message, 'caption') && (message as any).caption) {
+				buttonsMessage.contentText = (message as any).caption
+			}
+			const typeKey = Object.keys(m)[0]
+			if (typeKey) {
+				const type = typeKey.replace('Message', '').toUpperCase()
+				buttonsMessage.headerType =
+					(WAProto.Message.ButtonsMessage.HeaderType as any)[type] ??
+					WAProto.Message.ButtonsMessage.HeaderType.EMPTY
+				Object.assign(buttonsMessage, m)
+			} else {
+				buttonsMessage.headerType = WAProto.Message.ButtonsMessage.HeaderType.EMPTY
+			}
+		}
+		if (hasOptionalProperty(message, 'footer') && (message as any).footer) {
+			buttonsMessage.footerText = (message as any).footer
+		}
+		if (hasOptionalProperty(message, 'title') && (message as any).title) {
+			buttonsMessage.text = (message as any).title
+			if (!Object.keys(m).some(k => k.endsWith('Message') && k !== 'buttonsMessage')) {
+				buttonsMessage.headerType = WAProto.Message.ButtonsMessage.HeaderType.TEXT
+			}
+		}
+		buttonsMessage.contextInfo = {
+			...((message as any).contextInfo || {}),
+			...((message as any).mentions?.length ? { mentionedJid: (message as any).mentions } : {})
+		}
+		m = { buttonsMessage }
+		m.messageContextInfo = m.messageContextInfo || {}
+		if (!m.messageContextInfo.messageSecret) {
+			m.messageContextInfo.messageSecret = randomBytes(32)
+		}
+	} else if (
+		hasOptionalProperty(message, 'templateButtons') &&
+		Array.isArray((message as any).templateButtons) &&
+		(message as any).templateButtons.length
+	) {
+		const hydratedTemplate: any = {
+			hydratedButtons: (message as any).templateButtons
+		}
+		if (hasNonNullishProperty(message, 'text')) {
+			hydratedTemplate.hydratedContentText = (message as any).text
+		} else if (hasOptionalProperty(message, 'caption') && (message as any).caption) {
+			hydratedTemplate.hydratedContentText = (message as any).caption
+			Object.assign(hydratedTemplate, m)
+		}
+		if (hasOptionalProperty(message, 'footer') && (message as any).footer) {
+			hydratedTemplate.hydratedFooterText = (message as any).footer
+		}
+		hydratedTemplate.contextInfo = {
+			...((message as any).contextInfo || {}),
+			...((message as any).mentions?.length ? { mentionedJid: (message as any).mentions } : {})
+		}
+		m = { templateMessage: { hydratedTemplate } }
+		m.messageContextInfo = m.messageContextInfo || {}
+		if (!m.messageContextInfo.messageSecret) {
+			m.messageContextInfo.messageSecret = randomBytes(32)
+		}
+	} else if (
+		hasOptionalProperty(message, 'interactiveButtons') &&
+		Array.isArray((message as any).interactiveButtons) &&
+		(message as any).interactiveButtons.length
+	) {
+		const interactiveMessage: any = {
+			nativeFlowMessage: {
+				buttons: (message as any).interactiveButtons
+			}
+		}
+		if (hasNonNullishProperty(message, 'text')) {
+			interactiveMessage.body = { text: (message as any).text }
+			interactiveMessage.header = {
+				title: (message as any).title || '',
+				subtitle: (message as any).subtitle || '',
+				hasMediaAttachment: false
+			}
+		} else {
+			if (hasOptionalProperty(message, 'caption') && (message as any).caption) {
+				interactiveMessage.body = { text: (message as any).caption }
+			}
+			interactiveMessage.header = {
+				title: (message as any).title || '',
+				subtitle: (message as any).subtitle || '',
+				hasMediaAttachment: true,
+				...m
+			}
+		}
+		if (hasOptionalProperty(message, 'footer') && (message as any).footer) {
+			interactiveMessage.footer = { text: (message as any).footer }
+		}
+		interactiveMessage.contextInfo = {
+			...((message as any).contextInfo || {}),
+			...((message as any).mentions?.length ? { mentionedJid: (message as any).mentions } : {})
+		}
+		m = { interactiveMessage }
+		m.messageContextInfo = m.messageContextInfo || {}
+		if (!m.messageContextInfo.messageSecret) {
+			m.messageContextInfo.messageSecret = randomBytes(32)
+		}
+	}
+	// === end compatibility layer ===
+
 	if (hasOptionalProperty(message, 'viewOnce') && !!message.viewOnce) {
 		m = { viewOnceMessage: { message: m } }
 	}

@@ -453,24 +453,12 @@
   resolved "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.4.tgz"
   integrity sha512-GJ//SSXbnwSDes02umB3nDJLFcQzw8a18V8fyhqr6tV515tOEMdImjjxj1AoafMRz56F3PHgftnj1QEKSU1zkw==
 
-"@img/sharp-libvips-linuxmusl-x64@1.3.4":
-  version "1.3.4"
-  resolved "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-x64/-/sharp-libvips-linuxmusl-x64-1.3.4.tgz"
-  integrity sha512-6zXKeE/p39I1AmA3cJG35eyBGNqNddLnUXjhwBnsGjFPWqf5VKkDBEqaEkPDoTEtkxwi2vv8Tcr2mDyP4So7Fg==
-
 "@img/sharp-linux-x64@0.35.5":
   version "0.35.5"
   resolved "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.5.tgz"
   integrity sha512-SxFtLTeJInhAA9Q836kux2vZNeOBQEx658qvbboZScr0wIARym3IcGmW7KpVD5sbVg0Ojy+udFQdayYIZyoNog==
   optionalDependencies:
     "@img/sharp-libvips-linux-x64" "1.3.4"
-
-"@img/sharp-linuxmusl-x64@0.35.5":
-  version "0.35.5"
-  resolved "https://registry.npmjs.org/@img/sharp-linuxmusl-x64/-/sharp-linuxmusl-x64-0.35.5.tgz"
-  integrity sha512-4KOphqB035HrVdqLZfCgMzzERrQkkzOwRhl4OAkRO1YCldbaFjySXMaK534Mo0V+LndnlJk+sbUyLeU0ULyD1A==
-  optionalDependencies:
-    "@img/sharp-libvips-linuxmusl-x64" "1.3.4"
 
 "@inquirer/ansi@^2.0.8":
   version "2.0.8"
@@ -1329,11 +1317,6 @@
   resolved "https://registry.npmjs.org/@parcel/watcher-linux-x64-glibc/-/watcher-linux-x64-glibc-2.6.0.tgz"
   integrity sha512-ulGE6x6Oz6iAwg75T8YQSoguBWasniIbX+QWpaYPcCnDOpdWX3k+4xbEYPZVLxOuoJI+svJJPD3sEj8G7lrQ3A==
 
-"@parcel/watcher-linux-x64-musl@2.6.0":
-  version "2.6.0"
-  resolved "https://registry.npmjs.org/@parcel/watcher-linux-x64-musl/-/watcher-linux-x64-musl-2.6.0.tgz"
-  integrity sha512-tkBYKt7YQrjIJWYDnto2YgO8MRkjlMTSNoRHzsXinBqbLdeOM3L32wPZJvIZxqaLMfSlS/4sUjH/6STVP/XDLw==
-
 "@parcel/watcher@^2.6.0":
   version "2.6.0"
   resolved "https://registry.npmjs.org/@parcel/watcher/-/watcher-2.6.0.tgz"
@@ -1750,11 +1733,6 @@
   version "1.12.2"
   resolved "https://registry.npmjs.org/@unrs/resolver-binding-linux-x64-gnu/-/resolver-binding-linux-x64-gnu-1.12.2.tgz"
   integrity sha512-mPsUhunKKDih5O96Y6enDQyHc1SqBPlY1E/SfMWDM3EdJ95Z9CArPeCVwCCqbP45ljvivdEk8Fxn+SIb1rDAJQ==
-
-"@unrs/resolver-binding-linux-x64-musl@1.12.2":
-  version "1.12.2"
-  resolved "https://registry.npmjs.org/@unrs/resolver-binding-linux-x64-musl/-/resolver-binding-linux-x64-musl-1.12.2.tgz"
-  integrity sha512-azrt6+5ydLd8Vt210AAFis/lZevSfPw93EJRIJG+xPu4WCJ8K0kppCTpMyLPcKT7H15M4Jnt2tMp5bOvCkRC6A==
 
 "@whiskeysockets/eslint-config@^1.0.0":
   version "1.0.0"

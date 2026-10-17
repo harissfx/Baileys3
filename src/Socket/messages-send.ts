@@ -50,6 +50,8 @@ import {
 	shouldSendNewTcToken,
 	storeTcTokensFromIqResult
 } from '../Utils/tc-token-utils.js'
+import { setBotMessageSecret } from '../Utils/decode-wa-message.js'
+import { captureUnifiedResponse, generateUnifiedResponseContent } from '../Utils/message-composer.js'
 import {
 	areJidsSameUser,
 	type BinaryNode,
@@ -261,6 +263,13 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				const decoded = jidDecode(jid)
 				const user = decoded?.user
 				const device = decoded?.device
+				// Meta AI / bot (@bot): endpoint device 0 tunggal yang TIDAK dienumerasi usync.
+				// Kalau diserahkan ke usync, hasilnya kosong dan bot terbuang dari penerima. Suntik langsung device 0.
+				if (user && (isJidMetaAI(jid) || isJidBot(jid))) {
+					deviceResults.push({ user, device: typeof device === 'number' ? device : 0, jid })
+					return null
+				}
+
 				const isExplicitDevice = typeof device === 'number' && device >= 0
 
 				if (isExplicitDevice && user) {
@@ -469,6 +478,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			// LID if mapped, otherwise original
 			const wireJids = [
 				...jidsRequiringFetch.filter(jid => !!isLidUser(jid) || !!isHostedLidUser(jid)),
+				// Meta AI (@bot) harus ikut di-fetch prekey-nya, kalau tidak sesi ke bot tidak pernah terbentuk
+				...jidsRequiringFetch.filter(jid => !!isJidMetaAI(jid) || !!isJidBot(jid)),
 				...(
 					(await signalRepository.lidMapping.getLIDsForPNs(
 						jidsRequiringFetch.filter(jid => !!isPnUser(jid) || !!isHostedPnUser(jid))
@@ -758,6 +769,15 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					participantsList.push(...statusJidList)
 				}
 
+				// Meta AI / bot yang dipanggil lewat botGroupMetadata TIDAK ada di daftar member grup.
+				// Tanpa ini bot tidak menerima sender key dan tidak bisa mendekripsi pesan grup (tidak ada balasan AI).
+				const botGroupParticipants: any[] =
+					(message as any)?.messageContextInfo?.botMetadata?.botGroupMetadata?.participantsMetadata || []
+				for (const bp of botGroupParticipants) {
+					if (!bp?.botFbid) continue
+					const botJid = `${bp.botFbid}@bot`
+					if (!participantsList.includes(botJid)) participantsList.push(botJid)
+				}
 				const additionalDevices = await getUSyncDevices(participantsList, !!useUserDevicesCache, false)
 				devices.push(...additionalDevices)
 
@@ -788,8 +808,11 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				for (const device of devices) {
 					const deviceJid = device.jid
 					const hasKey = !!senderKeyMap[deviceJid]
+					// Penerima bot harus dialamatkan di SETIAP pemanggilan, jangan dilewati karena cache sender key,
+					// kalau tidak follow-up terkirim ke 0 penerima dan bisa ditolak server (479).
+					const isBotRecipient = !!isJidMetaAI(deviceJid)
 					if (
-						(!hasKey || !!retryParticipants) &&
+						(!hasKey || !!retryParticipants || isBotRecipient) &&
 						!isHostedLidUser(deviceJid) &&
 						!isHostedPnUser(deviceJid) &&
 						device.device !== 99
@@ -1142,6 +1165,12 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			logger.debug({ msgId }, `sending message to ${participants.length} devices`)
 
 			await sendNode(stanza)
+
+			// Register messageSecret at send time so Meta AI msmsg replies can be decrypted
+			// even if they arrive before our own message echo comes back.
+			if ((message as any)?.messageContextInfo?.messageSecret) {
+				setBotMessageSecret(msgId, (message as any).messageContextInfo.messageSecret, destinationJid)
+			}
 
 			// Fire-and-forget: issue our token to the contact AFTER message send.
 			// WA Web skips protocol messages and PSA/bot contacts (TcTokenChatAction: isRegularUser)
@@ -1925,6 +1954,141 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			const { message, messageId } = generateLatexContent(quoted, options)
 			await relayMessage(jid, message, { messageId, noSelfSync: options.noSelfSync })
 			return { message, messageId }
+		},
+
+		captureUnifiedResponse,
+
+		sendUnifiedResponse: async (jid: string, quoted: any, captured: any) => {
+			const { message, messageId } = generateUnifiedResponseContent(quoted, captured)
+			await relayMessage(jid, message, { messageId })
+			return { message, messageId }
+		},
+
+		/**
+		 * Send a prompt to Meta AI (Hatch).
+		 * Targets 867051314767696@bot, attaches messageSecret + botMetadata + <bot> persona node,
+		 * registers the secret so the reply can be decrypted. Returns the message id.
+		 */
+		sendMetaAI: async (
+			text: string,
+			opts: {
+				jid?: string
+				invokerJid?: string
+				sessionId?: string
+				messageSecret?: Uint8Array
+				capabilities?: number[]
+				quoted?: any
+				links?: any
+				mention?: boolean
+				botFbid?: string
+				personaType?: string
+				agentEngagementType?: string
+				modeSelected?: string
+			} = {}
+		) => {
+			const META_AI_BOT_JID = '867051314767696@bot'
+			const META_AI_FBID = '867051314767696'
+			const jid = opts.jid || META_AI_BOT_JID
+			const isGroup = jid.endsWith('@g.us')
+			const invokerJid = opts.invokerJid || authState.creds.me?.id
+			const RENDERING = {
+				bloksVersioningId: 'd7c89519fd412464e4a4ddd60b2e5fa57c5000766a697d60835246ef0952daba',
+				pixelDensity: 2.625
+			}
+			const botMetadata = isGroup
+				? {
+						botGroupMetadata: {
+							participantsMetadata: [{ botFbid: opts.botFbid || META_AI_FBID }]
+						},
+						botRenderingConfigMetadata: RENDERING
+					}
+				: {
+						personaId: jid,
+						invokerJid,
+						sessionMetadata: {
+							sessionId: opts.sessionId || randomUUID(),
+							sessionSource: 3
+						},
+						capabilityMetadata: {
+							capabilities: opts.capabilities || Array.from({ length: 72 }, (_, i) => i + 1)
+						},
+						botMetricsMetadata: {
+							destinationId: jid,
+							destinationEntryPoint: 2
+						}
+					}
+
+			let content: proto.IMessage
+			if (isGroup) {
+				if (opts.mention) {
+					const fbid = opts.botFbid || META_AI_FBID
+					content = {
+						extendedTextMessage: {
+							text: `@${fbid} ${text}`,
+							contextInfo: {
+								mentionedJid: [META_AI_BOT_JID],
+								botMessageSharingInfo: {
+									botEntryPointOrigin: 'GROUP_MEMBER',
+									forwardScore: 0
+								} as any
+							}
+						}
+					}
+				} else {
+					content = { conversation: text }
+				}
+			} else {
+				content = { extendedTextMessage: { text } }
+			}
+
+			const message: proto.IMessage = {
+				...content,
+				messageContextInfo: {
+					messageSecret: opts.messageSecret || randomBytes(32),
+					botMetadata: botMetadata as any
+				}
+			}
+
+			// Attach quoted message context if provided (MessageRelayOptions has no `quoted`)
+			if (opts.quoted) {
+				const q = opts.quoted
+				const qKey = q.key || q
+				const qMsg = q.message || q
+				const ctx: proto.IContextInfo = {
+					stanzaId: qKey.id,
+					participant: qKey.participant || qKey.remoteJid,
+					quotedMessage: qMsg
+				}
+				if ((message as any).extendedTextMessage) {
+					;(message as any).extendedTextMessage.contextInfo = {
+						...((message as any).extendedTextMessage.contextInfo || {}),
+						...ctx
+					}
+				} else if ((message as any).conversation) {
+					// conversation has no contextInfo — upgrade to extendedTextMessage
+					const text = (message as any).conversation
+					delete (message as any).conversation
+					;(message as any).extendedTextMessage = { text, contextInfo: ctx }
+				}
+			}
+
+			const msgId = generateMessageIDV2(invokerJid)
+			const relayOpts: MessageRelayOptions = {
+				messageId: msgId,
+				additionalNodes: [
+					{
+						tag: 'bot',
+						attrs: {
+							persona_type: opts.personaType || 'default',
+							agent_engagement_type: opts.agentEngagementType || (isGroup ? 'invoked' : 'direct_chat'),
+							mode_selected: opts.modeSelected || '0'
+						}
+					}
+				]
+			}
+
+			await relayMessage(jid, message, relayOpts)
+			return msgId
 		}
 	}
 }
