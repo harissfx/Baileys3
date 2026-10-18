@@ -387,6 +387,7 @@ export const makeSocket = (config: SocketConfig) => {
 	const signalRepository = makeSignalRepository({ creds, keys }, logger, pnFromLIDUSync)
 
 	let lastDateRecv: Date
+	let lastKeepAliveTick = Date.now()
 	let epoch = 1
 	let keepAliveReq: NodeJS.Timeout
 	let qrTimer: NodeJS.Timeout
@@ -697,12 +698,22 @@ export const makeSocket = (config: SocketConfig) => {
 				lastDateRecv = new Date()
 			}
 
+			// timer telat jalan (proses macet/tidur/disuspend) bukan berarti koneksi putus; beri satu siklus lagi
+			const nowTick = Date.now()
+			const tickGap = nowTick - lastKeepAliveTick
+			lastKeepAliveTick = nowTick
+			if (tickGap > keepAliveIntervalMs * 1.5) {
+				logger.warn({ tickGap }, 'keepalive timer delayed (process stalled/suspended), skipping lost-check this cycle')
+				lastDateRecv = new Date()
+			}
+
 			const diff = Date.now() - lastDateRecv.getTime()
 			/*
 				check if it's been a suspicious amount of time since the server responded with our last seen
 				it could be that the network is down
 			*/
-			if (diff > keepAliveIntervalMs + 5000) {
+			// toleransi: baru dianggap putus kalau >= 3 siklus keepalive berturut-turut tanpa frame dari server
+			if (diff > keepAliveIntervalMs * 3 + 5000) {
 				void end(new Boom('Connection was lost', { statusCode: DisconnectReason.connectionLost }))
 			} else if (ws.isOpen) {
 				// if its all good, send a keep alive request
@@ -862,7 +873,7 @@ export const makeSocket = (config: SocketConfig) => {
 		}
 	})
 	ws.on('error', mapWebSocketError(end))
-	ws.on('close', () => void end(new Boom('Connection Terminated', { statusCode: DisconnectReason.connectionClosed })))
+	ws.on('close', (code?: number, reason?: Buffer | string) => void end(new Boom(`Connection Terminated (ws close code=${code ?? '-'} reason=${reason?.toString() || '-'})`, { statusCode: DisconnectReason.connectionClosed })))
 	// the server terminated the connection
 	ws.on(
 		'CB:xmlstreamend',
