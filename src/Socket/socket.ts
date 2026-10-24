@@ -335,7 +335,8 @@ export const makeSocket = (config: SocketConfig) => {
 			} else {
 				if (!contactEnabled) {
 					contactEnabled = true
-					usyncQuery = usyncQuery.withContactProtocol()
+					// contact + lid so callers (cekno/getiduser) get privacy LID
+					usyncQuery = usyncQuery.withContactProtocol().withLIDProtocol()
 				}
 
 				const phone = `+${jid.replace('+', '').split('@')[0]?.split(':')[0]}`
@@ -350,7 +351,13 @@ export const makeSocket = (config: SocketConfig) => {
 		const results = await executeUSyncQuery(usyncQuery)
 
 		if (results) {
-			return results.list.filter(a => !!a.contact).map(({ contact, id }) => ({ jid: id, exists: contact as boolean }))
+			return results.list
+				.filter(a => !!a.contact)
+				.map(({ contact, id, lid }) => ({
+					jid: id,
+					exists: contact as boolean,
+					lid: (lid as string | undefined) || undefined
+				}))
 		}
 	}
 
@@ -873,7 +880,15 @@ export const makeSocket = (config: SocketConfig) => {
 		}
 	})
 	ws.on('error', mapWebSocketError(end))
-	ws.on('close', (code?: number, reason?: Buffer | string) => void end(new Boom(`Connection Terminated (ws close code=${code ?? '-'} reason=${reason?.toString() || '-'})`, { statusCode: DisconnectReason.connectionClosed })))
+	ws.on(
+		'close',
+		(code?: number, reason?: Buffer | string) =>
+			void end(
+				new Boom(`Connection Terminated (ws close code=${code ?? '-'} reason=${reason?.toString() || '-'})`, {
+					statusCode: DisconnectReason.connectionClosed
+				})
+			)
+	)
 	// the server terminated the connection
 	ws.on(
 		'CB:xmlstreamend',

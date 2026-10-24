@@ -30,12 +30,31 @@ const parseNewsletterMetadata = (result: unknown): NewsletterMetadata | null => 
 		return null
 	}
 
-	if ('id' in result && typeof result.id === 'string') {
-		return result as NewsletterMetadata
+	if ('id' in result && typeof (result as any).id === 'string') {
+		const r = result as any
+		// Normalize recovered/binary + GraphQL shapes into a consistent object
+		const thread = r.thread_metadata || r.threadMetadata || {}
+		const nameText = typeof r.name === 'string' ? r.name : thread.name?.text || thread.name || undefined
+		return {
+			...r,
+			id: r.id,
+			name: nameText,
+			invite: r.invite || thread.invite,
+			thread_metadata: {
+				...thread,
+				name: nameText ? { text: nameText } : thread.name,
+				invite: r.invite || thread.invite
+			}
+		} as NewsletterMetadata
 	}
 
-	if ('result' in result && typeof result.result === 'object' && result.result !== null && 'id' in result.result) {
-		return result.result as NewsletterMetadata
+	if (
+		'result' in result &&
+		typeof (result as any).result === 'object' &&
+		(result as any).result !== null &&
+		'id' in (result as any).result
+	) {
+		return parseNewsletterMetadata((result as any).result)
 	}
 
 	return null
